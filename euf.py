@@ -1,6 +1,6 @@
 # Simple EUF solver
 #Work of ZHANG Boyuan
-#
+#EUF solver + Lazy SMT
 
 from math import floor, ceil
 import argparse
