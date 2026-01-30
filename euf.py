@@ -1,6 +1,7 @@
 # Simple EUF solver
 #Work of ZHANG Boyuan
 #EUF solver + Lazy SMT
+# all files structures on https://github.com/FBI-openup/DAI_TD4_EUF.git
 
 from math import floor, ceil
 import argparse
