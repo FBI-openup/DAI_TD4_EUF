@@ -1,5 +1,5 @@
 # Simple EUF solver
-#
+#Work of ZHANG Boyuan
 #
 
 from math import floor, ceil
@@ -286,6 +286,129 @@ def euf_solver(formula):
     is_consistent = graph.check_consistency(inequalities)
 
     return is_consistent
+
+
+def lazy_smt_solver(formula):
+    """
+    Lazy offline SMT solver for the Theory of Equality.
+    
+    This solver works by:
+    1. Creating a boolean abstraction of the formula (map equality atoms to boolean variables)
+    2. Enumerating boolean models using a SAT solver
+    3. For each boolean model, convert it back to theory literals and check with euf_solver
+    4. If a model is theory-consistent, return SAT
+    5. If a model is theory-inconsistent, block it and try the next one
+    6. If all models are exhausted, return UNSAT
+    
+    Args:
+        formula: A PySMT formula (can contain boolean connectives and equality atoms)
+        
+    Returns:
+        True if satisfiable, False otherwise
+    """
+    # Extract all equality atoms from the formula
+    atoms = get_atoms(formula)
+    
+    # Create boolean abstraction: map each atom to a fresh boolean variable
+    atom_to_bool = {}
+    bool_to_atom = {}
+    
+    for i, atom in enumerate(atoms):
+        bool_var = Symbol(f"b_{i}", BOOL)
+        atom_to_bool[atom] = bool_var
+        bool_to_atom[bool_var] = atom
+    
+    # Substitute atoms with boolean variables to get boolean abstraction
+    bool_formula = formula.substitute(atom_to_bool)
+    
+    # Use a SAT solver to enumerate boolean models
+    sat_solver = Solver(name="z3")
+    sat_solver.add_assertion(bool_formula)
+    
+    # Try to find a satisfying assignment
+    while sat_solver.solve():
+        # Get the current model
+        model = sat_solver.get_model()
+        
+        # Convert boolean model back to theory literals
+        theory_literals = []
+        for bool_var, atom in bool_to_atom.items():
+            bool_value = model.get_value(bool_var)
+            if bool_value.is_true():
+                theory_literals.append(atom)
+            else:
+                theory_literals.append(Not(atom))
+        
+        # Create conjunction of theory literals
+        if len(theory_literals) == 0:
+            theory_formula = TRUE()
+        elif len(theory_literals) == 1:
+            theory_formula = theory_literals[0]
+        else:
+            theory_formula = And(theory_literals)
+        
+        # Check theory consistency with EUF solver
+        is_theory_sat = euf_solver(theory_formula)
+        
+        if is_theory_sat:
+            # Found a satisfying assignment
+            return True
+        else:
+            # Block this model by adding the negation of the current assignment
+            blocking_clause = []
+            for bool_var, atom in bool_to_atom.items():
+                bool_value = model.get_value(bool_var)
+                if bool_value.is_true():
+                    blocking_clause.append(Not(bool_var))
+                else:
+                    blocking_clause.append(bool_var)
+            
+            # Add blocking clause to prevent this assignment from being generated again
+            if len(blocking_clause) > 0:
+                sat_solver.add_assertion(Or(blocking_clause))
+    
+    # No satisfying assignment found
+    return False
+
+
+def main():
+    """
+    Main function for testing the solvers
+    """
+    # Example usage
+    from pysmt.typing import Type
+    
+    # Create a simple test
+    MySort = Type("MySort")
+    a = Symbol("a", MySort)
+    b = Symbol("b", MySort)
+    c = Symbol("c", MySort)
+    
+    # Test 1: Simple satisfiable formula
+    print("Test 1: a = b")
+    formula1 = Equals(a, b)
+    print(f"EUF Solver: {euf_solver(formula1)}")
+    print(f"Lazy SMT Solver: {lazy_smt_solver(formula1)}")
+    print()
+    
+    # Test 2: Simple unsatisfiable formula
+    print("Test 2: a = b AND a != b")
+    formula2 = And(Equals(a, b), Not(Equals(a, b)))
+    print(f"EUF Solver: {euf_solver(formula2)}")
+    print(f"Lazy SMT Solver: {lazy_smt_solver(formula2)}")
+    print()
+    
+    # Test 3: Disjunction (only lazy SMT can handle directly)
+    print("Test 3: (a = b) OR (b = c)")
+    formula3 = Or(Equals(a, b), Equals(b, c))
+    print(f"Lazy SMT Solver: {lazy_smt_solver(formula3)}")
+    print()
+    
+    # Test 4: Complex formula with disjunction
+    print("Test 4: ((a = b) OR (b = c)) AND (a != c)")
+    formula4 = And(Or(Equals(a, b), Equals(b, c)), Not(Equals(a, c)))
+    print(f"Lazy SMT Solver: {lazy_smt_solver(formula4)}")
+    print()
 
 
 if __name__ == '__main__':
